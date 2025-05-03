@@ -18,6 +18,7 @@
       {
         devShells.default = with pkgs; mkShell {
           buildInputs = [
+            SDL2
             (rust-bin.stable.latest.default.override {
               extensions = [ "rust-src" "rust-analyzer" ];
             })
