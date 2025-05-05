@@ -44,7 +44,7 @@ fn main() -> Result<(), String> {
     'running: loop {
         // todo: add menu state
         match current_state {
-            STATE::Gameover => {
+            STATE::Gameover(score) => {
                 // Redraw background
                 canvas.set_draw_color(Color::RGB(0, 0, 0));
                 canvas.clear();
@@ -55,7 +55,7 @@ fn main() -> Result<(), String> {
             
                 let font = ttf_context.load_font(font_path, 24)?;
                 let surface = font
-                .render("GAME OVER")
+                .render(&format!("Your score is: {}", score))
                 .blended(Color::RGB(255, 255, 255))
                 .map_err(|e| e.to_string())?;
             
@@ -138,7 +138,7 @@ fn main() -> Result<(), String> {
 
                     // Exit if gameover
                     if game.gameover {
-                        current_state = STATE::Gameover;
+                        current_state = STATE::Gameover(game.score);
                         break;
                     }
 
@@ -153,7 +153,8 @@ fn main() -> Result<(), String> {
 
 enum STATE {
     Tetris,
-    Gameover
+    /// Stores the score
+    Gameover(usize)
 }
 
 /// Basic position struct for position handeling
