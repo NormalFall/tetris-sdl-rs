@@ -13,7 +13,6 @@ const GAME_HEIGHT: usize = 20;
 const GAME_RATIO: usize = 50;
 const FPS: usize = 60;
 
-
 fn main() -> Result<(), String> {
     // Initialize SDL
     let sdl_context = sdl2::init()?;
@@ -38,103 +37,124 @@ fn main() -> Result<(), String> {
     // Set up event handling
     let mut event_pump = sdl_context.event_pump()?;
 
+    //todo: change this so that state can be change by multiple threads
+    let mut current_state = STATE::Tetris;
     
-
-    // Gameover stuff
-    let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string())?;
-
-    let font_path = "src/Roboto.ttf";
-
-    let font = ttf_context.load_font(font_path, 24)?;
-    let surface = font
-    .render("GAME OVER")
-    .blended(Color::RGB(255, 255, 255))
-    .map_err(|e| e.to_string())?;
-
-    let texture_creator = canvas.texture_creator();
-    let texture = texture_creator
-        .create_texture_from_surface(&surface)
-        .map_err(|e| e.to_string())?;
-
-    let target = Rect::new(
-        0,
-        (GAME_HEIGHT * GAME_RATIO) as i32 / 2,
-    (GAME_WIDTH * GAME_RATIO) as u32,
-    40,
-    );
-
-
     // Main game loop
     'running: loop {
-        let mut game = TetrisGame::new(&mut canvas, 12345624361264);
-        'game: loop {
-            // Handle events
-            for event in event_pump.poll_iter() {
-                match event {
-                    Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                        break 'running;
-                    },
-                    Event::KeyDown { keycode: Some(Keycode::Left), .. } => {
-                        game.move_tetris_with_check(Position { x: -1, y: 0 })?;
-                        game.canvas.present();
-                    },
-                    Event::KeyDown { keycode: Some(Keycode::Right), .. } => {
-                        game.move_tetris_with_check(Position { x: 1, y: 0 })?;
-                        game.canvas.present();
-                    },
-                    Event::KeyDown { keycode: Some(Keycode::X), .. } => {
-                        game.rotate_tetris_left()?;
-                        game.canvas.present();
-                    },
-                    Event::KeyDown { keycode: Some(Keycode::C), .. } => {
-                        game.rotate_tetris_right()?;
-                        game.canvas.present();
-                    },
-                    Event::KeyDown { keycode: Some(Keycode::Down), .. } => {
-                        game.fast_falling = true;
-                    },
-                    Event::KeyUp { keycode: Some(Keycode::Down), .. } => {
-                        game.fast_falling = false;
-                    },
-                    _ => {}
-                }
-            }
-    
-            // Run game
-            game.update_timer()?;
+        // todo: add menu state
+        match current_state {
+            STATE::Gameover => {
+                // Redraw background
+                canvas.set_draw_color(Color::RGB(0, 0, 0));
+                canvas.clear();
 
-            // Exit if gameover
-            if game.gameover {
-                break 'game;
-            }
-    
-            // Short delay to control frame rate
-            std::thread::sleep(Duration::new(0, 1_000_000_000 / FPS as u32));
-        }
+                let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string())?;
 
-        'gameover: loop {
-            for event in event_pump.poll_iter() {
-                match event {
-                    Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                        break 'running;
-                    },
-                    Event::KeyDown { keycode: Some(_), .. } => {
-                        game.canvas.set_draw_color(Color::RGB(0, 0, 0));
-                        game.canvas.clear();
-                        break 'gameover;
-                    },
-                    _ => {}
+                let font_path = "src/Roboto.ttf";
+            
+                let font = ttf_context.load_font(font_path, 24)?;
+                let surface = font
+                .render("GAME OVER")
+                .blended(Color::RGB(255, 255, 255))
+                .map_err(|e| e.to_string())?;
+            
+                let texture_creator = canvas.texture_creator();
+                let texture = texture_creator
+                    .create_texture_from_surface(&surface)
+                    .map_err(|e| e.to_string())?;
+            
+                let target = Rect::new(
+                    0,
+                    (GAME_HEIGHT * GAME_RATIO) as i32 / 2,
+                (GAME_WIDTH * GAME_RATIO) as u32,
+                40,
+                );
+
+                'gameover: loop {
+                    // Now we can safely use canvas since current_game is None
+                    for event in event_pump.poll_iter() {
+                        match event {
+                            Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                                break 'running;
+                            },
+                            Event::KeyDown { keycode: Some(_), .. } => {
+                                break 'gameover; // Exit state
+                            },
+                            _ => {}
+                        }
+                    }
+
+                    canvas.copy(&texture, None, Some(target))?;
+                    canvas.present();
+
+                    std::thread::sleep(Duration::new(0, 1_000_000_000 / FPS as u32));   
                 }
-            }
-            game.canvas.clear();
-            game.canvas.copy(&texture, None, Some(target))?;
-            game.canvas.present();
+
+                current_state = STATE::Tetris;
+            },
+            STATE::Tetris => {
+                // Redraw background
+                canvas.set_draw_color(Color::RGB(0, 0, 0));
+                canvas.clear();
+
+                let mut game = TetrisGame::new(&mut canvas, 1221351235);
+
+                // todo: add a substate for pausing the game
+                loop {
+                    for event in event_pump.poll_iter() {
+                        match event {
+                            Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                                break 'running;
+                            },
+                            Event::KeyDown { keycode: Some(Keycode::Left), .. } => {
+                                game.move_tetris_with_check(Position { x: -1, y: 0 })?;
+                                game.canvas.present();
+                            },
+                            Event::KeyDown { keycode: Some(Keycode::Right), .. } => {
+                                game.move_tetris_with_check(Position { x: 1, y: 0 })?;
+                                game.canvas.present();
+                            },
+                            Event::KeyDown { keycode: Some(Keycode::X), .. } => {
+                                game.rotate_tetris_left()?;
+                                game.canvas.present();
+                            },
+                            Event::KeyDown { keycode: Some(Keycode::C), .. } => {
+                                game.rotate_tetris_right()?;
+                                game.canvas.present();
+                            },
+                            Event::KeyDown { keycode: Some(Keycode::Down), .. } => {
+                                game.fast_falling = true;
+                            },
+                            Event::KeyUp { keycode: Some(Keycode::Down), .. } => {
+                                game.fast_falling = false;
+                            },
+                            _ => {}
+                        }
+                    }
+
+                    // Run game
+                    game.update_timer()?;
+
+                    // Exit if gameover
+                    if game.gameover {
+                        current_state = STATE::Gameover;
+                        break;
+                    }
+
+                    std::thread::sleep(Duration::new(0, 1_000_000_000 / FPS as u32));
+                }
+            },
         }
     }
     
     Ok(())
 }
 
+enum STATE {
+    Tetris,
+    Gameover
+}
 
 /// Basic position struct for position handeling
 #[derive(Clone, Copy)]
