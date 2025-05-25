@@ -65,8 +65,7 @@ fn main() -> Result<(), String> {
                     None
                 }
             }
-        })
-        .expect("Couldn't open any controller");
+        });
 
     //todo: change this so that state can be change by multiple threads
     let mut current_state = STATE::Tetris;
