@@ -4,6 +4,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use sdl2::controller::Button;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 use std::time::Duration;
@@ -16,6 +17,7 @@ const FPS: usize = 60;
 fn main() -> Result<(), String> {
     // Initialize SDL
     let sdl_context = sdl2::init()?;
+    let game_controller_subsystem = sdl_context.game_controller()?;
     let video_subsystem = sdl_context.video()?;
 
     // Create a window
@@ -36,6 +38,35 @@ fn main() -> Result<(), String> {
 
     // Set up event handling
     let mut event_pump = sdl_context.event_pump()?;
+
+    let available = game_controller_subsystem
+        .num_joysticks()
+        .map_err(|e| format!("can't enumerate joysticks: {}", e))?;
+
+
+    let _controller = (0..available)
+        .find_map(|id| {
+            if !game_controller_subsystem.is_game_controller(id) {
+                println!("{} is not a game controller", id);
+                return None;
+            }
+
+            println!("Attempting to open controller {}", id);
+
+            match game_controller_subsystem.open(id) {
+                Ok(c) => {
+                    // We managed to find and open a game controller,
+                    // exit the loop
+                    println!("Success: opened \"{}\"", c.name());
+                    Some(c)
+                }
+                Err(e) => {
+                    println!("failed: {:?}", e);
+                    None
+                }
+            }
+        })
+        .expect("Couldn't open any controller");
 
     //todo: change this so that state can be change by multiple threads
     let mut current_state = STATE::Tetris;
@@ -78,7 +109,7 @@ fn main() -> Result<(), String> {
                             Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                                 break 'running;
                             },
-                            Event::KeyDown { keycode: Some(_), .. } => {
+                            Event::KeyDown { keycode: Some(_), .. } | Event::ControllerButtonUp { .. } => {
                                 break 'gameover; // Exit state
                             },
                             _ => {}
@@ -107,26 +138,26 @@ fn main() -> Result<(), String> {
                             Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                                 break 'running;
                             },
-                            Event::KeyDown { keycode: Some(Keycode::Left), .. } => {
+                            Event::KeyDown { keycode: Some(Keycode::Left), .. } | Event::ControllerButtonDown { button: Button::DPadLeft, .. } => {
                                 game.move_tetris_with_check(Position { x: -1, y: 0 })?;
                                 game.canvas.present();
                             },
-                            Event::KeyDown { keycode: Some(Keycode::Right), .. } => {
+                            Event::KeyDown { keycode: Some(Keycode::Right), .. } | Event::ControllerButtonDown { button: Button::DPadRight, .. } => {
                                 game.move_tetris_with_check(Position { x: 1, y: 0 })?;
                                 game.canvas.present();
                             },
-                            Event::KeyDown { keycode: Some(Keycode::X), .. } => {
+                            Event::KeyDown { keycode: Some(Keycode::X), .. } | Event::ControllerButtonDown { button: Button::A, .. } => {
                                 game.rotate_tetris_left()?;
                                 game.canvas.present();
                             },
-                            Event::KeyDown { keycode: Some(Keycode::C), .. } => {
+                            Event::KeyDown { keycode: Some(Keycode::C), .. } | Event::ControllerButtonDown { button: Button::B, .. } => {
                                 game.rotate_tetris_right()?;
                                 game.canvas.present();
                             },
-                            Event::KeyDown { keycode: Some(Keycode::Down), .. } => {
+                            Event::KeyDown { keycode: Some(Keycode::Down), .. } | Event::ControllerButtonDown { button: Button::DPadDown, .. } => {
                                 game.fast_falling = true;
                             },
-                            Event::KeyUp { keycode: Some(Keycode::Down), .. } => {
+                            Event::KeyUp { keycode: Some(Keycode::Down), .. } | Event::ControllerButtonUp { button: Button::DPadDown, .. } => {
                                 game.fast_falling = false;
                             },
                             _ => {}
@@ -234,7 +265,7 @@ impl<'a> TetrisGame<'a> {
             } else {
                 self.refresh_speed - (self.score / 4)
             }
-        }; // speedup based on lines cleared
+        }; // speedup based on lines cleared!self.check_tetris_hit_wall(&self.current_tetris, shift.x)
 
         self.refresh_counter += 1;
         if refresh_speed <= self.refresh_counter {
