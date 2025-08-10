@@ -1,5 +1,5 @@
 use rand::rngs::SmallRng;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
@@ -13,6 +13,16 @@ const GAME_WIDTH: usize = 10;
 const GAME_HEIGHT: usize = 20;
 const GAME_RATIO: usize = 50;
 const FPS: usize = 60;
+
+const NATURAL_TETRIS: [TetrisType; 7] = [
+            TetrisType::Line,
+            TetrisType::LShapeRight,
+            TetrisType::LShapeLeft,
+            TetrisType::ZShapeRight,
+            TetrisType::ZShapeLeft,
+            TetrisType::TShape,
+            TetrisType::Square,
+];
 
 fn main() -> Result<(), String> {
     // Initialize SDL
@@ -203,7 +213,7 @@ struct TetrisGame<'a> {
     /// game grid. Uses GAME_WIDTH and GAME_HEIGHT for size
     /// 
     /// Only contains the placed squares with thier colors. Not the tetris themselves
-    board: [[Option<Color>; GAME_WIDTH]; GAME_HEIGHT],
+    board: [[Option<TetrisType>; GAME_WIDTH]; GAME_HEIGHT],
     /// Number of pixel each board squares uses
     size_ratio: u32, // Size in pixel of each square
     /// rng generator
@@ -232,26 +242,44 @@ impl<'a> TetrisGame<'a> {
             fast_falling: false,
             refresh_speed: 20,
             refresh_counter: 0,
-            current_tetris: Tetris::new(LSHAPE_RIGHT, Color { r: 255, g: 0, b: 0, a: 0 }),
+            current_tetris: Tetris::new(TetrisType::LShapeLeft, Color { r: 255, g: 0, b: 0, a: 0 }),
             gameover: false
         }
     }
 
     /// Creates a new current tetris with rng
     fn make_new_random_tetris(&mut self) {
-        let colors = self.rng.next_u32().to_be_bytes();
-        let map: TetrisMap = match self.rng.next_u32() % 8 {
-            0 => LSHAPE_RIGHT,
-            1 => LSHAPE_LEFT,
-            3 => ZSHAPE_LEFT,
-            4 => ZSHAPE_RIGHT,
-            5 => LINE,
-            6 => TSHAPE,
-            7 => SQUARE,
-            _ => LINE
-        };
+        
 
-        self.current_tetris = Tetris::new(map, Color::RGB(colors[0], colors[1], colors[3]));
+        let tetris = &NATURAL_TETRIS[self.rng.random_range(0..NATURAL_TETRIS.len())];
+
+        self.current_tetris = Tetris::new(tetris.clone(), self.get_tetris_color(tetris));
+    }
+
+    /// Get the color related to each tetris based on the score
+    /// All custom tetris are white by default
+    fn get_tetris_color(&self, tetris_type: &TetrisType) -> Color {
+        // Buffer that contains the RGB of each tetris
+        let mut color_buff = [0; NATURAL_TETRIS.len() * 3];
+
+        // Fill buff with colors for every types
+        // Always the same for every games
+        rand::rngs::SmallRng::seed_from_u64(self.score as u64)
+            .fill_bytes(&mut color_buff);
+
+        // Find the index of the tetris based on NATURAL_TETRIS
+        let tetris_index = NATURAL_TETRIS
+            .iter()
+            .enumerate()
+            .find_map(
+            |(index, x)| if x == tetris_type {Some(index)} else {None});
+        
+        // A bit hacky but does the job
+        if let Some(index) = tetris_index {
+            Color::RGB(color_buff[index * 3], color_buff[(index * 3) + 1], color_buff[(index * 3) + 2])
+        } else {
+            Color::RGB(255, 255, 255)
+        }
     }
 
     /// Function managing game speed and fastfall
@@ -325,7 +353,7 @@ impl<'a> TetrisGame<'a> {
         for (yindex, y) in self.board.into_iter().enumerate() {
             for (xindex, x) in y.into_iter().enumerate() {
                 if let Some(c) = x {
-                    self.canvas.set_draw_color(c);
+                    self.canvas.set_draw_color(self.get_tetris_color(&c));
                     self.draw_in_grid(Position {x: xindex as i32, y: yindex as i32})?;
                 } else {
                     self.canvas.set_draw_color(Color::RGB(0, 0, 0));
@@ -373,7 +401,7 @@ impl<'a> TetrisGame<'a> {
                     (yindex as i32 + shift.y + tetris.position.y) < GAME_HEIGHT as i32 &&
                     (xindex as i32 + shift.x + tetris.position.x) >= 0 &&
                     (xindex as i32 + shift.x + tetris.position.x) < GAME_WIDTH as i32 {
-                    if self.board[(yindex as i32 + shift.y + tetris.position.y) as usize][(xindex as i32 + shift.x + tetris.position.x) as usize] != None {
+                    if self.board[(yindex as i32 + shift.y + tetris.position.y) as usize][(xindex as i32 + shift.x + tetris.position.x) as usize].is_some() {
                         colided = true;
                     }
                 }
@@ -416,12 +444,13 @@ impl<'a> TetrisGame<'a> {
 
     /// Rotates the tetris left
     /// 
-    /// Cancels the action if it will hit something if the rotation is done
+    /// Cancels the action if it will hit something when the rotation is done
     /// 
     /// Note: If you need to rotate without checks use the tetris struct directly
     fn rotate_tetris_left(&mut self) -> Result<(), String> {
         let rotated_tetris = Tetris {
             position: self.current_tetris.position,
+            tetris_type: self.current_tetris.tetris_type,
             map: self.current_tetris.rotate_left_result(),
             color: self.current_tetris.color
         };
@@ -444,6 +473,7 @@ impl<'a> TetrisGame<'a> {
     fn rotate_tetris_right(&mut self) -> Result<(), String> {
         let rotated_tetris = Tetris {
             position: self.current_tetris.position,
+            tetris_type: self.current_tetris.tetris_type,
             map: self.current_tetris.rotate_right_result(),
             color: self.current_tetris.color
         };
@@ -466,7 +496,7 @@ impl<'a> TetrisGame<'a> {
                     yindex as i32 + self.current_tetris.position.y < GAME_HEIGHT as i32 &&
                     xindex as i32 + self.current_tetris.position.x >= 0 &&
                     xindex as i32 + self.current_tetris.position.x < GAME_WIDTH as i32 {
-                    self.board[(yindex as i32 + self.current_tetris.position.y) as usize][(xindex as i32 + self.current_tetris.position.x) as usize] = Some(self.current_tetris.color);
+                    self.board[(yindex as i32 + self.current_tetris.position.y) as usize][(xindex as i32 + self.current_tetris.position.x) as usize] = Some(self.current_tetris.tetris_type);
                 }
 
                 if x && yindex as i32 + self.current_tetris.position.y < 0 {
@@ -486,7 +516,7 @@ impl<'a> TetrisGame<'a> {
     fn full_lines(&self) -> [bool; GAME_HEIGHT] {
         let mut full_lines = [false; GAME_HEIGHT];
         for (index, line) in self.board.into_iter().enumerate() {
-            if line.into_iter().find(|x| x == &None) == None {
+            if line.into_iter().find(|x| x.is_none()).is_none() {
                 full_lines[index] = true;
             }
         }
@@ -504,63 +534,100 @@ impl<'a> TetrisGame<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TetrisType {
+    Line,
+    LShapeRight,
+    LShapeLeft,
+    ZShapeRight,
+    ZShapeLeft,
+    TShape,
+    Square,
+    Custom(TetrisMap)
+}
+
 /// Map type to make sure tetris management stays consistent
 type TetrisMap = [[bool; 5]; 5];
 
-const LINE: TetrisMap = [[false, false, false, false, false],
+const LINE_MAP: TetrisMap = [[false, false, false, false, false],
                         [false, false, false, false, false],
                         [false, true, true, true, true],
                         [false, false, false, false, false],
                         [false, false, false, false, false]];
-const LSHAPE_RIGHT: TetrisMap = [[false, false, false, false, false],
+const LSHAPE_RIGHT_MAP: TetrisMap = [[false, false, false, false, false],
                                 [false, false, false, true, false],
                                 [false, true, true, true, false],
                                 [false, false, false, false, false],
                                 [false, false, false, false, false]];
-const LSHAPE_LEFT: TetrisMap = [[false, false, false, false, false],
+const LSHAPE_LEFT_MAP: TetrisMap = [[false, false, false, false, false],
                                 [false, false, false, false, false],
                                 [false, true, true, true, false],
                                 [false, false, false, true, false],
                                 [false, false, false, false, false]];
-const ZSHAPE_RIGHT: TetrisMap = [[false, false, false, false, false],
+const ZSHAPE_RIGHT_MAP: TetrisMap = [[false, false, false, false, false],
                                 [false, true, true, false, false],
                                 [false, false, true, true, false],
                                 [false, false, false, false, false],
                                 [false, false, false, false, false]];
 
-const ZSHAPE_LEFT: TetrisMap = [[false, false, false, false, false],
+const ZSHAPE_LEFT_MAP: TetrisMap = [[false, false, false, false, false],
                                 [false, false, true, true, false],
                                 [false, true, true, false, false],
                                 [false, false, false, false, false],
                                 [false, false, false, false, false]];
 
-const TSHAPE: TetrisMap = [[false, false, false, false, false],
+const TSHAPE_MAP: TetrisMap = [[false, false, false, false, false],
                             [false, false, true, false, false],
                             [false, true, true, true, false],
                             [false, false, false, false, false],
                             [false, false, false, false, false]];
 
-const SQUARE: TetrisMap = [[false, false, false, false, false],
+const SQUARE_MAP: TetrisMap = [[false, false, false, false, false],
                                 [false, false, true, true, false],
                                 [false, false, true, true, false],
                                 [false, false, false, false, false],
                                 [false, false, false, false, false]];
 
+
+fn tetris_type_to_map(tetris_type: &TetrisType) -> TetrisMap {
+    match tetris_type {
+        TetrisType::Line => LINE_MAP,
+        TetrisType::LShapeRight => LSHAPE_RIGHT_MAP,
+        TetrisType::LShapeLeft => LSHAPE_LEFT_MAP,
+        TetrisType::ZShapeRight => ZSHAPE_RIGHT_MAP,
+        TetrisType::ZShapeLeft => ZSHAPE_LEFT_MAP,
+        TetrisType::TShape => TSHAPE_MAP,
+        TetrisType::Square => SQUARE_MAP,
+        TetrisType::Custom(_) => [[false; 5]; 5] // Return an empty map
+    }
+}
+
 /// Contains the tetris props and transform logics
 struct Tetris {
     /// Current tetris position
     position: Position,
+    /// Current tetris type
+    tetris_type: TetrisType,
     /// Contains the tetris shape
     map: TetrisMap,
-    /// Tetris color
+    /// Tetris color overwrite
     color: Color
 }
 
 impl Tetris {
     /// Makes a new tetris object
-    fn new(map: TetrisMap, color: Color) -> Self {
+    /// Map is derived from the type.
+    /// If type is [`TetrisType::Custom`] it will use the map within the Enum
+    fn new(tetris_type: TetrisType, color: Color) -> Self {
+        let map = if let TetrisType::Custom(map) = tetris_type {
+            map
+        } else {
+            tetris_type_to_map(&tetris_type)
+        };
+
         Self {
             position: Position {x: (GAME_WIDTH as i32 / 2) - 2, y: -5},
+            tetris_type,
             map,
             color
         }
